@@ -88,6 +88,8 @@ export const factory = async (uri: string, response: Response): Promise<HalState
 
   links.add(...parseHalLinks(uri, body));
 
+  const parsedEmbedded = parseHalEmbedded(uri, body, response.headers);
+
   // Remove _links and _embedded from body
   const {
     _embedded,
@@ -103,9 +105,9 @@ export const factory = async (uri: string, response: Response): Promise<HalState
     newBody,
     response.headers,
     links,
-    parseHalEmbedded(uri, body, response.headers),
-    halForm ? [parseHalForm(uri, halForm)] : [],
-  );
+    parsedEmbedded,
+    halForm ? [parseHalForm(uri, halForm)] : []
+  )
 
 };
 
@@ -209,7 +211,7 @@ function parseHalEmbedded(context: string, body: HalResource, headers: Headers):
 
   const result: HalState<any>[] = [];
 
-  for (const embedded of Object.values(body._embedded)) {
+  for (const [relType, embedded] of Object.entries(body._embedded)) {
 
     let embeddedList: HalResource[];
 
@@ -220,17 +222,34 @@ function parseHalEmbedded(context: string, body: HalResource, headers: Headers):
 
     }
     for (const embeddedItem of embeddedList) {
-
       if (embeddedItem._links === undefined || embeddedItem._links.self === undefined || Array.isArray(embeddedItem._links.self)) {
-        // Skip any embedded without a self link.
+        // If embeddedItem does not have a self link, append the item to body
+        if (body[relType]) {
+          if (!Array.isArray(body[relType])) {
+            body[relType] = [body[relType]];
+            body[relType].push(embeddedItem);
+          } else {
+            body[relType].push(embeddedItem);
+          }
+        } else {
+          body[relType] = embeddedItem;
+        }
+
         continue;
       }
+
+      // Parsing nested embedded items. Note that we assume that the base url is relative to
+      // the outermost parent, not relative to the embedded item. HAL is not clear on this.
+      const parsedEmbedded = parseHalEmbedded(context, embeddedItem, headers);
+
       // Remove _links and _embedded from body
       const {
         _embedded,
         _links,
         ...newBody
       } = embeddedItem;
+
+      const halForm: HalFormsTemplate | undefined = embeddedItem._templates?.default
 
       result.push(new HalState(
         resolve(context, embeddedItem._links.self.href),
@@ -239,9 +258,8 @@ function parseHalEmbedded(context: string, body: HalResource, headers: Headers):
           'Content-Type': headers.get('Content-Type')!,
         }),
         new Links(context, parseHalLinks(context, embeddedItem)),
-        // Parsing nested embedded items. Note that we assume that the base url is relative to
-        // the outermost parent, not relative to the embedded item. HAL is not clear on this.
-        parseHalEmbedded(context, embeddedItem, headers),
+        parsedEmbedded,
+        halForm ? [parseHalForm(context, halForm)] : []
       ));
     }
   }
