@@ -175,7 +175,7 @@ export class Resource<T = any> extends EventEmitter {
   /**
    * Sends a POST request, and follows to the next resource.
    *
-   * If a server responds with a 201 Status code and a Location header,
+   * If a server responds with a 201 or 202 Status code and a Location header,
    * it will automatically return the newly created resource.
    *
    * If the server responded with a 204 or 205, this function will return
@@ -189,6 +189,7 @@ export class Resource<T = any> extends EventEmitter {
 
     switch (response.status) {
       case 201:
+      case 202:
         if (response.headers.has('location')) {
           return this.go(<string> response.headers.get('location'));
         }
@@ -197,7 +198,7 @@ export class Resource<T = any> extends EventEmitter {
       case 205 :
         return this;
       default:
-        throw new Error('Did not receive a 201, 204 or 205 status code so we could not follow to the next resource');
+        throw new Error('Did not receive a 201, 202, 204 or 205 status code so we could not follow to the next resource');
     }
 
   }
